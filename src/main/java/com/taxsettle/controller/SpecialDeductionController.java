@@ -21,7 +21,7 @@ public class SpecialDeductionController {
 
     @PostMapping
     public SpecialDeduction create(@PathVariable Long taxpayerId, @RequestBody SpecialDeduction deduction) {
-        return specialDeductionService.create(deduction);
+        return specialDeductionService.create(taxpayerId, deduction);
     }
 
     @PostMapping("/batch")
@@ -31,12 +31,12 @@ public class SpecialDeductionController {
 
     @PutMapping("/{id}")
     public SpecialDeduction update(@PathVariable Long taxpayerId, @PathVariable Long id, @RequestBody SpecialDeduction deduction) {
-        return specialDeductionService.update(id, deduction);
+        return specialDeductionService.update(taxpayerId, id, deduction);
     }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable Long taxpayerId, @PathVariable Long id) {
-        specialDeductionService.delete(id);
+        specialDeductionService.delete(taxpayerId, id);
         return ResponseEntity.ok().build();
     }
 }
