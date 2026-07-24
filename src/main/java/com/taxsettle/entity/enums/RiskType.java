@@ -1,0 +1,10 @@
+package com.taxsettle.entity.enums;
+
+public enum RiskType {
+    INCOME_FLUCTUATION,
+    MULTIPLE_EMPLOYER_INCOME,
+    DEDUCTION_TARGET_DUPLICATE,
+    PREPAID_TAX_INSUFFICIENT,
+    DEDUCTION_EXCEED_LIMIT,
+    INCOME_MISMATCH
+}

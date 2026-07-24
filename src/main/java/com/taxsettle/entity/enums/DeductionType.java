@@ -1,0 +1,9 @@
+package com.taxsettle.entity.enums;
+
+public enum DeductionType {
+    CHILDREN_EDUCATION,
+    ELDERLY_SUPPORT,
+    HOUSING_LOAN_INTEREST,
+    CONTINUING_EDUCATION_DEGREE,
+    CONTINUING_EDUCATION_CERTIFICATION
+}
