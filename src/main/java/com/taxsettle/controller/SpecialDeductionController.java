@@ -21,7 +21,7 @@ public class SpecialDeductionController {
 
     @PostMapping
     public SpecialDeduction create(@PathVariable Long taxpayerId, @RequestBody SpecialDeduction deduction) {
-        return specialDeductionService.create(deduction);
+        return specialDeductionService.create(taxpayerId, deduction);
     }
 
     @PostMapping("/batch")
