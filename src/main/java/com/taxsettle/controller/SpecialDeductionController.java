@@ -1,6 +1,8 @@
 package com.taxsettle.controller;
 
 import com.taxsettle.entity.SpecialDeduction;
+import com.taxsettle.entity.Taxpayer;
+import com.taxsettle.repository.TaxpayerRepository;
 import com.taxsettle.service.SpecialDeductionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +15,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SpecialDeductionController {
     private final SpecialDeductionService specialDeductionService;
+    private final TaxpayerRepository taxpayerRepository;
 
     @GetMapping
     public List<SpecialDeduction> list(@PathVariable Long taxpayerId) {
@@ -21,6 +24,9 @@ public class SpecialDeductionController {
 
     @PostMapping
     public SpecialDeduction create(@PathVariable Long taxpayerId, @RequestBody SpecialDeduction deduction) {
+        Taxpayer taxpayer = taxpayerRepository.findById(taxpayerId)
+                .orElseThrow(() -> new RuntimeException("Taxpayer not found: " + taxpayerId));
+        deduction.setTaxpayer(taxpayer);
         return specialDeductionService.create(deduction);
     }
 
