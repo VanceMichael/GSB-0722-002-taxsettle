@@ -9,9 +9,12 @@ import com.taxsettle.repository.SpecialDeductionRepository;
 import com.taxsettle.repository.TaxpayerRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -31,54 +34,74 @@ public class SpecialDeductionService {
         return specialDeductionRepository.findByTaxpayerId(taxpayerId);
     }
 
+    @Transactional
     public SpecialDeduction create(SpecialDeduction deduction) {
         Taxpayer taxpayer = taxpayerRepository.findById(deduction.getTaxpayer().getId())
                 .orElseThrow(() -> new RuntimeException("Taxpayer not found"));
-        if (taxpayer.getLocked()) {
-            throw new IllegalStateException("Taxpayer record is locked, cannot add deductions");
+        ensureNotLocked(taxpayer);
+
+        if (specialDeductionRepository.existsByTaxpayerIdAndDeductionType(
+                taxpayer.getId(), deduction.getDeductionType())) {
+            throw new IllegalStateException(
+                    "Duplicate deduction type: " + deduction.getDeductionType()
+                            + " already exists for taxpayer " + taxpayer.getId());
         }
-        deduction.setAnnualLimit(resolveLimit(deduction.getDeductionType(), deduction.getAnnualAmount()));
-        if (deduction.getAnnualAmount().compareTo(deduction.getAnnualLimit()) > 0) {
-            deduction.setAnnualAmount(deduction.getAnnualLimit());
-        }
-        if (deduction.getFamilyMember() != null && deduction.getFamilyMember().getId() != null) {
-            FamilyMember fm = familyMemberRepository.findById(deduction.getFamilyMember().getId())
-                    .orElseThrow(() -> new RuntimeException("Family member not found"));
-            deduction.setFamilyMember(fm);
-        }
+
+        deduction.setTaxpayer(taxpayer);
+        applyLimitAndFamilyMember(deduction);
         return specialDeductionRepository.save(deduction);
     }
 
+    @Transactional
     public List<SpecialDeduction> createBatch(Long taxpayerId, List<SpecialDeduction> deductions) {
         Taxpayer taxpayer = taxpayerRepository.findById(taxpayerId)
                 .orElseThrow(() -> new RuntimeException("Taxpayer not found"));
-        if (taxpayer.getLocked()) {
-            throw new IllegalStateException("Taxpayer record is locked, cannot add deductions");
+        ensureNotLocked(taxpayer);
+
+        Set<DeductionType> typesInBatch = new HashSet<>();
+        for (SpecialDeduction d : deductions) {
+            if (!typesInBatch.add(d.getDeductionType())) {
+                throw new IllegalStateException(
+                        "Duplicate deduction type within batch: " + d.getDeductionType());
+            }
+            if (specialDeductionRepository.existsByTaxpayerIdAndDeductionType(
+                    taxpayerId, d.getDeductionType())) {
+                throw new IllegalStateException(
+                        "Duplicate deduction type: " + d.getDeductionType()
+                                + " already exists for taxpayer " + taxpayerId);
+            }
         }
-        deductions.forEach(d -> {
+
+        for (SpecialDeduction d : deductions) {
             d.setTaxpayer(taxpayer);
-            d.setAnnualLimit(resolveLimit(d.getDeductionType(), d.getAnnualAmount()));
-            if (d.getAnnualAmount().compareTo(d.getAnnualLimit()) > 0) {
-                d.setAnnualAmount(d.getAnnualLimit());
-            }
-            if (d.getFamilyMember() != null && d.getFamilyMember().getId() != null) {
-                FamilyMember fm = familyMemberRepository.findById(d.getFamilyMember().getId())
-                        .orElseThrow(() -> new RuntimeException("Family member not found"));
-                d.setFamilyMember(fm);
-            }
-        });
+            applyLimitAndFamilyMember(d);
+        }
         return specialDeductionRepository.saveAll(deductions);
     }
 
+    @Transactional
     public SpecialDeduction update(Long id, SpecialDeduction updated) {
         SpecialDeduction existing = specialDeductionRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Special deduction not found: " + id));
-        if (existing.getTaxpayer().getLocked()) {
-            throw new IllegalStateException("Taxpayer record is locked, cannot modify deductions");
+        ensureNotLocked(existing.getTaxpayer());
+
+        if (updated.getDeductionType() != null
+                && !updated.getDeductionType().equals(existing.getDeductionType())) {
+            specialDeductionRepository
+                    .findByTaxpayerIdAndDeductionTypeAndIdNot(
+                            existing.getTaxpayer().getId(), updated.getDeductionType(), id)
+                    .ifPresent(conflict -> {
+                        throw new IllegalStateException(
+                                "Duplicate deduction type after update: " + updated.getDeductionType()
+                                        + " already exists for taxpayer " + existing.getTaxpayer().getId());
+                    });
+            existing.setDeductionType(updated.getDeductionType());
         }
-        existing.setDeductionType(updated.getDeductionType());
-        existing.setAnnualAmount(updated.getAnnualAmount());
-        existing.setAnnualLimit(resolveLimit(updated.getDeductionType(), updated.getAnnualAmount()));
+
+        if (updated.getAnnualAmount() != null) {
+            existing.setAnnualAmount(updated.getAnnualAmount());
+        }
+        existing.setAnnualLimit(resolveLimit(existing.getDeductionType(), existing.getAnnualAmount()));
         if (existing.getAnnualAmount().compareTo(existing.getAnnualLimit()) > 0) {
             existing.setAnnualAmount(existing.getAnnualLimit());
         }
@@ -93,22 +116,39 @@ public class SpecialDeductionService {
         return specialDeductionRepository.save(existing);
     }
 
+    @Transactional
     public void delete(Long id) {
         SpecialDeduction existing = specialDeductionRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Special deduction not found: " + id));
-        if (existing.getTaxpayer().getLocked()) {
-            throw new IllegalStateException("Taxpayer record is locked, cannot delete deductions");
-        }
+        ensureNotLocked(existing.getTaxpayer());
         specialDeductionRepository.deleteById(id);
     }
 
+    @Transactional
     public void deleteByTaxpayerId(Long taxpayerId) {
         Taxpayer taxpayer = taxpayerRepository.findById(taxpayerId)
                 .orElseThrow(() -> new RuntimeException("Taxpayer not found: " + taxpayerId));
-        if (taxpayer.getLocked()) {
-            throw new IllegalStateException("Taxpayer record is locked, cannot delete deductions");
-        }
+        ensureNotLocked(taxpayer);
         specialDeductionRepository.deleteByTaxpayerId(taxpayerId);
+    }
+
+    private void ensureNotLocked(Taxpayer taxpayer) {
+        if (Boolean.TRUE.equals(taxpayer.getLocked())) {
+            throw new IllegalStateException(
+                    "Taxpayer " + taxpayer.getId() + " is locked and cannot be modified");
+        }
+    }
+
+    private void applyLimitAndFamilyMember(SpecialDeduction d) {
+        d.setAnnualLimit(resolveLimit(d.getDeductionType(), d.getAnnualAmount()));
+        if (d.getAnnualAmount().compareTo(d.getAnnualLimit()) > 0) {
+            d.setAnnualAmount(d.getAnnualLimit());
+        }
+        if (d.getFamilyMember() != null && d.getFamilyMember().getId() != null) {
+            FamilyMember fm = familyMemberRepository.findById(d.getFamilyMember().getId())
+                    .orElseThrow(() -> new RuntimeException("Family member not found"));
+            d.setFamilyMember(fm);
+        }
     }
 
     private BigDecimal resolveLimit(DeductionType type, BigDecimal declaredAmount) {
