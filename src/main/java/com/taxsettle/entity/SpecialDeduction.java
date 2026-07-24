@@ -9,7 +9,10 @@ import lombok.*;
 import java.math.BigDecimal;
 
 @Entity
-@Table(name = "special_deductions")
+@Table(name = "special_deductions",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_deduction_taxpayer_type",
+                columnNames = {"taxpayer_id", "deduction_type"}))
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
